@@ -37,6 +37,29 @@ except ImportError as e:
 # ║                    AYARLAR                        ║
 # ╚══════════════════════════════════════════════════╝
 
+def load_dotenv(path: str = ".env"):
+    """Minimal .env loader (ek kutuphane gerektirmez)."""
+    if not os.path.exists(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                if line.lower().startswith("export "):
+                    line = line[7:].strip()
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip("'").strip('"')
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except Exception:
+        pass
+
+
+load_dotenv()
+
 API_KEY         = os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("GOOGLE_API_KEY", "").strip()
 GEMINI_PRIMARY  = "gemini-3-flash-preview"
 GEMINI_FALLBACK = "gemini-2.5-flash"
