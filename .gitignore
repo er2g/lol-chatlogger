@@ -1,0 +1,27 @@
+# Editor / OS
+.vs/
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# Secrets / local env
+.env
+
+# Generated app data
+lol_chat_screenshots/
+lol_chat_packs/
+chat_db/
+
