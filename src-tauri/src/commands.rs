@@ -1,12 +1,15 @@
 use crate::db::{ChatMessage, Database, UserSummary};
 use crate::scanner;
+use crate::tracker::{Tracker, TrackerStatus};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
+use tokio::sync::Mutex;
 
 pub struct AppState {
     pub db: Arc<Database>,
     pub data_dir: PathBuf,
+    pub tracker: Arc<Mutex<Tracker>>,
 }
 
 #[tauri::command]
@@ -40,24 +43,14 @@ pub async fn scan_screenshot(
         return Err(format!("Dosya bulunamadi: {image_path}"));
     }
 
-    let model = state.db.get_setting("codex_model")
-        .ok()
-        .flatten();
-
-    let messages = scanner::scan_screenshot(
-        &path,
-        &pack_label,
-        model.as_deref(),
-    ).await?;
-
+    let model = state.db.get_setting("codex_model").ok().flatten();
+    let messages = scanner::scan_screenshot(&path, &pack_label, model.as_deref()).await?;
     let db = state.db.clone();
     scanner::flush_to_db(&db, messages)
 }
 
 #[tauri::command]
-pub async fn scan_directory(
-    state: State<'_, AppState>,
-) -> Result<ScanResult, String> {
+pub async fn scan_directory(state: State<'_, AppState>) -> Result<ScanResult, String> {
     let ss_dir = state.data_dir.join("screenshots");
     if !ss_dir.exists() {
         return Ok(ScanResult { scanned: 0, messages: 0 });
@@ -90,7 +83,6 @@ pub async fn scan_directory(
                 let inserted = scanner::flush_to_db(&db, messages).unwrap_or(0);
                 total_messages += inserted;
                 total_scanned += 1;
-                // Rename to _scanned
                 let new_name = path.with_file_name(format!(
                     "{}_scanned.png",
                     path.file_stem().unwrap_or_default().to_string_lossy()
@@ -103,9 +95,7 @@ pub async fn scan_directory(
         }
     }
 
-    // Merge similar usernames
     let _ = scanner::merge_similar_usernames(&state.db, 0.82);
-
     Ok(ScanResult { scanned: total_scanned, messages: total_messages })
 }
 
@@ -114,6 +104,36 @@ pub struct ScanResult {
     pub scanned: usize,
     pub messages: usize,
 }
+
+// ======================== TRACKER COMMANDS ========================
+
+#[tauri::command]
+pub async fn start_tracker(state: State<'_, AppState>) -> Result<String, String> {
+    let tracker = state.tracker.lock().await;
+    if tracker.is_running() {
+        return Ok("Tracker zaten calisiyor".into());
+    }
+    tracker.start();
+    Ok("Tracker baslatildi".into())
+}
+
+#[tauri::command]
+pub async fn stop_tracker(state: State<'_, AppState>) -> Result<String, String> {
+    let tracker = state.tracker.lock().await;
+    if !tracker.is_running() {
+        return Ok("Tracker zaten durmus".into());
+    }
+    tracker.stop();
+    Ok("Tracker durduruluyor...".into())
+}
+
+#[tauri::command]
+pub async fn get_tracker_status(state: State<'_, AppState>) -> Result<TrackerStatus, String> {
+    let tracker = state.tracker.lock().await;
+    Ok(tracker.get_status().await)
+}
+
+// ======================== SETTINGS ========================
 
 #[tauri::command]
 pub fn merge_usernames(state: State<AppState>) -> Result<usize, String> {

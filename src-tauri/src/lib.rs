@@ -2,11 +2,13 @@ mod capture;
 mod commands;
 mod db;
 mod scanner;
+mod tracker;
 
 use commands::AppState;
 use db::Database;
 use std::sync::Arc;
 use tauri::Manager;
+use tracker::Tracker;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,15 +20,17 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir).expect("create data dir");
 
             let db_path = data_dir.join("chat.db");
-            let db = Database::new(&db_path).expect("database init");
+            let db = Arc::new(Database::new(&db_path).expect("database init"));
 
-            // Screenshots klasoru
             let ss_dir = data_dir.join("screenshots");
             std::fs::create_dir_all(&ss_dir).ok();
 
+            let tracker = Tracker::new(ss_dir, db.clone());
+
             app.manage(AppState {
-                db: Arc::new(db),
+                db,
                 data_dir,
+                tracker: Arc::new(tokio::sync::Mutex::new(tracker)),
             });
 
             Ok(())
@@ -42,6 +46,9 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::get_data_dir,
+            commands::start_tracker,
+            commands::stop_tracker,
+            commands::get_tracker_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

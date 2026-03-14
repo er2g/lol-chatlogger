@@ -4,8 +4,9 @@
   import ChatView from "./lib/ChatView.svelte";
   import ScanPanel from "./lib/ScanPanel.svelte";
   import SearchBar from "./lib/SearchBar.svelte";
+  import TrackerPanel from "./lib/TrackerPanel.svelte";
 
-  let currentView = $state<"users" | "chat" | "scan">("users");
+  let currentView = $state<"users" | "chat" | "scan" | "tracker">("tracker");
   let selectedUser = $state<string>("");
   let stats = $state<{ msgs: number; users: number }>({ msgs: 0, users: 0 });
 
@@ -37,6 +38,7 @@
       <span class="stats">{stats.users} oyuncu / {stats.msgs} mesaj</span>
     </div>
     <nav>
+      <button class:active={currentView === "tracker"} onclick={() => currentView = "tracker"}>Takip</button>
       <button class:active={currentView === "users"} onclick={goHome}>Oyuncular</button>
       <button class:active={currentView === "scan"} onclick={() => currentView = "scan"}>Tara</button>
     </nav>
@@ -45,7 +47,9 @@
   <div class="content">
     <SearchBar onSelect={selectUser} />
 
-    {#if currentView === "users"}
+    {#if currentView === "tracker"}
+      <TrackerPanel />
+    {:else if currentView === "users"}
       <UserList onSelect={selectUser} />
     {:else if currentView === "chat"}
       <ChatView username={selectedUser} />
