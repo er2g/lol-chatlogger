@@ -22,9 +22,9 @@ pub struct Tracker {
     db: Arc<Database>,
 }
 
-/// Capture sonucu — Send uyumlu (HWND taşımaz)
 enum CaptureResult {
-    GameActive { path: Option<PathBuf>, tag: &'static str, error: Option<String> },
+    Ok { path: PathBuf, tag: String },
+    Fail(String),
     GameEnded,
     NoGame,
 }
@@ -67,7 +67,6 @@ impl Tracker {
 
         tokio::spawn(async move {
             let mut was_game_active = false;
-            let interval = std::time::Duration::from_secs(5);
 
             {
                 let mut s = status.lock().await;
@@ -78,16 +77,21 @@ impl Tracker {
             }
 
             while running.load(Ordering::Relaxed) {
-                // Tum Win32 islerini sync blokta yap, HWND await sinirini gecmesin
-                let result = {
-                    let dir = ss_dir.clone();
-                    do_capture(was_game_active, &dir)
-                };
+                // Ayarlari DB'den oku
+                let interval_secs: u64 = db.get_setting("capture_interval")
+                    .ok().flatten()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(5);
+                let capture_mode = db.get_setting("capture_mode")
+                    .ok().flatten()
+                    .unwrap_or_else(|| "background".into());
+
+                let result = do_capture(was_game_active, &ss_dir, &capture_mode);
 
                 match result {
-                    CaptureResult::GameActive { path: Some(p), tag, error: None } => {
+                    CaptureResult::Ok { path, tag } => {
                         was_game_active = true;
-                        let fname = p.file_name()
+                        let fname = path.file_name()
                             .unwrap_or_default()
                             .to_string_lossy()
                             .to_string();
@@ -96,15 +100,12 @@ impl Tracker {
                         s.captured += 1;
                         s.last_event = format!("[{}] #{} {}", tag, s.captured, fname);
                     }
-                    CaptureResult::GameActive { error: Some(e), .. } => {
+                    CaptureResult::Fail(e) => {
                         was_game_active = true;
                         let mut s = status.lock().await;
                         s.game_active = true;
                         s.skipped += 1;
-                        s.last_event = format!("SS hatasi: {}", e);
-                    }
-                    CaptureResult::GameActive { .. } => {
-                        was_game_active = true;
+                        s.last_event = format!("Hata: {}", e);
                     }
                     CaptureResult::GameEnded => {
                         was_game_active = false;
@@ -126,10 +127,9 @@ impl Tracker {
                     }
                 }
 
-                tokio::time::sleep(interval).await;
+                tokio::time::sleep(std::time::Duration::from_secs(interval_secs)).await;
             }
 
-            // Son tarama
             {
                 let mut s = status.lock().await;
                 s.last_event = "Durduruluyor, son tarama...".into();
@@ -144,8 +144,7 @@ impl Tracker {
     }
 }
 
-/// Sync fonksiyon: HWND islerini burada yapar, await kullanmaz
-fn do_capture(was_game_active: bool, ss_dir: &PathBuf) -> CaptureResult {
+fn do_capture(was_game_active: bool, ss_dir: &PathBuf, capture_mode: &str) -> CaptureResult {
     let hwnd = match capture::find_lol_window() {
         Some(h) => h,
         None => {
@@ -157,32 +156,42 @@ fn do_capture(was_game_active: bool, ss_dir: &PathBuf) -> CaptureResult {
         }
     };
 
-    let is_fg = capture::is_lol_foreground(hwnd);
-    let prev = if !is_fg {
-        capture::bring_to_front(hwnd)
-    } else {
-        None
-    };
+    match capture_mode {
+        "foreground" => {
+            // Eski yontem: pencereyi one getir, yakala, geri koy
+            let is_fg = capture::is_lol_foreground(hwnd);
+            let prev = if !is_fg {
+                capture::bring_to_front(hwnd)
+            } else {
+                None
+            };
 
-    let result = capture::capture_chat(hwnd, ss_dir);
+            let result = capture::capture_chat_foreground(hwnd, ss_dir);
 
-    if !is_fg {
-        if let Some(p) = prev {
-            capture::restore_window(p);
+            if !is_fg {
+                if let Some(p) = prev {
+                    capture::restore_window(p);
+                }
+            }
+
+            match result {
+                Ok(path) => CaptureResult::Ok {
+                    path,
+                    tag: if is_fg { "EKRAN" } else { "ALTAB" }.into(),
+                },
+                Err(e) => CaptureResult::Fail(e),
+            }
         }
-    }
-
-    match result {
-        Ok(path) => CaptureResult::GameActive {
-            path: Some(path),
-            tag: if is_fg { "EKRAN" } else { "ALTAB" },
-            error: None,
-        },
-        Err(e) => CaptureResult::GameActive {
-            path: None,
-            tag: "",
-            error: Some(e),
-        },
+        _ => {
+            // Background: PrintWindow ile pencereyi one getirmeden yakala
+            match capture::capture_chat_background(hwnd, ss_dir) {
+                Ok(path) => CaptureResult::Ok {
+                    path,
+                    tag: "ARKA".into(),
+                },
+                Err(e) => CaptureResult::Fail(e),
+            }
+        }
     }
 }
 
@@ -217,9 +226,7 @@ async fn run_scan_pipeline(ss_dir: &PathBuf, db: &Arc<Database>) {
                 ));
                 let _ = std::fs::rename(path, new_name);
             }
-            Err(e) => {
-                eprintln!("Scan hatasi {}: {e}", path.display());
-            }
+            Err(e) => eprintln!("Scan hatasi {}: {e}", path.display()),
         }
     }
 

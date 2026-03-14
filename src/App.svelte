@@ -5,8 +5,9 @@
   import ScanPanel from "./lib/ScanPanel.svelte";
   import SearchBar from "./lib/SearchBar.svelte";
   import TrackerPanel from "./lib/TrackerPanel.svelte";
+  import Settings from "./lib/Settings.svelte";
 
-  let currentView = $state<"users" | "chat" | "scan" | "tracker">("tracker");
+  let currentView = $state<"users" | "chat" | "scan" | "tracker" | "settings">("tracker");
   let selectedUser = $state<string>("");
   let stats = $state<{ msgs: number; users: number }>({ msgs: 0, users: 0 });
 
@@ -41,6 +42,7 @@
       <button class:active={currentView === "tracker"} onclick={() => currentView = "tracker"}>Takip</button>
       <button class:active={currentView === "users"} onclick={goHome}>Oyuncular</button>
       <button class:active={currentView === "scan"} onclick={() => currentView = "scan"}>Tara</button>
+      <button class:active={currentView === "settings"} onclick={() => currentView = "settings"}>Ayarlar</button>
     </nav>
   </header>
 
@@ -55,6 +57,8 @@
       <ChatView username={selectedUser} />
     {:else if currentView === "scan"}
       <ScanPanel onDone={() => { loadStats(); currentView = "users"; }} />
+    {:else if currentView === "settings"}
+      <Settings />
     {/if}
   </div>
 </main>
