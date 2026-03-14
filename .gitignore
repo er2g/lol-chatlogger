@@ -6,22 +6,24 @@
 Thumbs.db
 Desktop.ini
 
-# Python
+# Node
+node_modules/
+dist/
+
+# Rust
+src-tauri/target/
+src-tauri/gen/
+
+# Python (legacy)
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-.pytest_cache/
-.mypy_cache/
 .venv/
 venv/
-env/
 
-# Secrets / local env
+# Secrets
 .env
 
-# Generated app data
+# Generated data
 lol_chat_screenshots/
 lol_chat_packs/
 chat_db/
-
